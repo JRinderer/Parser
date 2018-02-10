@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
-project(ParserC C)
+project(Scanner01 C)
 
 set(CMAKE_C_STANDARD 99)
 
-add_executable(ParserC main.c)
+add_executable(Scanner01 main.c systemdefs.h scanner.c scanner.h token.h parser.c parser.h)

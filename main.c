@@ -1,228 +1,107 @@
-#include <stdio.h>
-
-
+#include "token.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
-int main() {
-    printf("Hello, World!\n");
-    return 0;
-}
+#include "scanner.h"
+#include "parser.h"
 
-typedef enum {ident, number, lparen, rparen,
-          times, // symbol *
-          slash, // symbol \ not added yet
-          plus, // symbol +
-          minus, //symbol -
-          eql, //symbol ==
-          neq, // !=
-          lss, // <
-          leq,// <=
-          gtr, // >
-          geq, // >=
-          callsym, // not added yet
-          beginsym, // not added yet
-          semicolon, // ;
-          endsym,
-          ifsym, whilesym, becomes, thensym, dosym, constsym,
-          comma, //:
-          varsym, procsym, period, oddsym,
-          not, // !
-          eq // =
-} Symbol;
 
-Symbol sym;
-int peek;
-void getsym(void);
-void error(const char*);
-void expression(void);
-void program(void);
-void nexttok(void);
+int main(int argc, char *argv[]) {
+    FILE *filePtr;
+    /*---------Begin process cmd-line args and Redirection--------*/
 
-#define is_num(c) ((c) >= '0' && (c) <= '9')
-#define is_letter(c) ((c) <= 'a' && (c) <= 'z' || (c) >= 'A' && (c) <= 'Z')
+    switch (argc) {
+        case 1: // No parameters, use stdin
+            // printf("NO argument provided\n");
+            filePtr = stdin;
+            break;
 
-int main(void)
-{
-  program();
-  return 0;
-}
+        case 2: // One parameter, use .lan file supplied
+            if ((filePtr = fopen(strcat(argv[1], ".klump"), "r")) == NULL) {
+                printf("Cannot open input file.\n");
+                exit(1);
+            }
+            break;
 
-void nexttok(void)
-{
-  peek = getchar();
-}
-
-void getsym(void)
-{
-  for(;;) {
-    nexttok();
-    if(peek == ' ' || peek == '\t') continue;
-    else if(peek == EOF) break;
-    else break;
-  }
-  //static char buf[256];
-  switch(peek) {
-  case '+': sym = plus; return;
-  case '-': sym = minus; return;
-  case '*': sym = times; return;
-  case ';': sym = semicolon; return;
-  case ':': sym = comma; return;
-  case '=':
-    nexttok();
-    if(peek == '=')
-      sym = eql;
-    else
-      sym = eq;
-    return;
-  case '!':
-    nexttok();
-    if(peek == '=')
-      sym = neq;
-    else
-      sym = not;
-    return;
-  case '<':
-    nexttok();
-    if(peek == '=')
-      sym = leq;
-    else
-      sym = lss;
-    return;
-  case '>':
-    nexttok();
-    if(peek == '=')
-      sym = geq;
-    else
-      sym = gtr;
-    return;
-  }
-  if(is_num(peek)) {
-    sym = number;
-    return;
-  }
-}
-
-int accept(Symbol s) {
-    if (sym == s) {
-        getsym();
-        return 1;
+        default:
+            printf("Unable to open file .klump extension is implicit.\n");
+            exit(0);
     }
-    return 0;
-}
 
-int expect(Symbol s) {
-    if (accept(s))
-        return 1;
-    error("expect: unexpected symbol");
-    return 0;
-}
+    /*---------End process cmd-line args and Redirection----------*/
 
-void factor(void) {
-    if (accept(ident)) {
-        ;
-    } else if (accept(number)) {
-        ;
-    } else if (accept(lparen)) {
-        expression();
-        expect(rparen);
+    /*---------Begin check if file empty-----------*/
+
+    fseek(filePtr, 0, SEEK_END);
+    if (ftell(filePtr) == 0) {
+        printf("File is empty.\n");
+        exit(1);
     } else {
-        error("factor: syntax error");
-        getsym();
+        rewind(filePtr);
     }
-}
 
-void term(void) {
-    factor();
-    while (sym == times || sym == slash) {
-        getsym();
-        factor();
-    }
-}
+    /*---------/End check if file empty-------------*/
 
-void expression(void) {
-    if (sym == plus || sym == minus)
-        getsym();
-    term();
-    while (sym == plus || sym == minus) {
-        getsym();
-        term();
-    }
-}
+    /*---------Begin check for invalid characters and max length-------------*/
 
-void condition(void) {
-    if (accept(oddsym)) {
-        expression();
-    } else {
-        expression();
-        if (sym == eql || sym == neq || sym == lss || sym == leq || sym == gtr || sym == geq) {
-            getsym();
-            expression();
-        } else {
-            error("condition: invalid operator");
-            getsym();
+    char c;
+    int numLine = 1;
+
+    int charCount = 0;
+    char tempStr[MAX]; // ! Remember: C doesn't do array out-of-bound checking!
+    int i;
+
+    int isValid = 1; // true
+    while ((c = fgetc(filePtr)) != EOF) {
+        if (c == '\n')
+            numLine++;
+
+        // Exclude comment line starting with '//' and ending with new line
+        if (c == '/') {
+            if (fgetc(filePtr) == '/') {
+                while ((c = fgetc(filePtr)) != '\n') {}
+                numLine++;
+            }
         }
-    }
-}
 
-void statement(void) {
-    if (accept(ident)) {
-        expect(becomes);
-        expression();
-    } else if (accept(callsym)) {
-        expect(ident);
-    } else if (accept(beginsym)) {
-        do {
-            statement();
-        } while (accept(semicolon));
-        expect(endsym);
-    } else if (accept(ifsym)) {
-        condition();
-        expect(thensym);
-        statement();
-    } else if (accept(whilesym)) {
-        condition();
-        expect(dosym);
-        statement();
-    } else {
-        error("statement: syntax error");
-        getsym();
-    }
-}
+        if (isalnum(c)) {
+            tempStr[charCount] = c; // array out-of-bound checking not happen here
+            charCount++;
+            if (charCount > MAX) {
+                printf("Word '%s' on line number %d is too long. \n", tempStr, numLine);
+                exit(1);
+            }
+        } else if (isspace(c) || isExAcceptableChar(c)) {
+            charCount = 0;
+        } else {
+            printf("Invalid character '%c' at line %d. \n", c, numLine);
+            isValid = 0; // false
+        }
 
-void block(void) {
-    if (accept(constsym)) {
-        do {
-            expect(ident);
-            expect(eql);
-            expect(number);
-        } while (accept(comma));
-        expect(semicolon);
     }
-    if (accept(varsym)) {
-        do {
-            expect(ident);
-        } while (accept(comma));
-        expect(semicolon);
-    }
-    while (accept(procsym)) {
-        expect(ident);
-        expect(semicolon);
-        block();
-        expect(semicolon);
-    }
-    statement();
-}
 
-void program(void) {
-    getsym();
-    block();
-    expect(period);
-}
+    if (isValid == 0) {
+        printf("Something wrong with the input file. \n");
+        exit(1);
+    }
 
-void error(const char *msg)
-{
-  fprintf(stderr,"error: %s\n",msg);
-  exit(1);
+    rewind(filePtr);
+
+    /*---------/End check for invalid characters and max length-------------*/
+
+    /*---------Begin Job-------------*/
+    // At this time, the file is good. Now let scanner.c do the work
+    TokenType tokenType = UNDEF;
+
+    while ((tokenType = getTokenType(filePtr,1)) != EOT) {
+
+        getTokenType();
+    }
+    /*---------/End Job-------------*/
+    fclose(filePtr);
+    //fclose(filePtr);
+    startParser();
+    return 0;
 }
